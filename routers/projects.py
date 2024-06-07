@@ -1,4 +1,4 @@
-from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 from dependencies import get_current_user
 from cassandra.cluster import Cluster
 from confluent_kafka import Producer, Consumer, KafkaException, KafkaError
@@ -19,6 +19,22 @@ SASL_MECHANISMS = 'PLAIN'
 CASSANDRA_HOSTS = ['155.207.19.242','155.207.19.243']
 CASSANDRA_PORT = 9042
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
 
 def get_kafka_consumer(user: dict, group_id: str):
     return Consumer({
@@ -33,7 +49,7 @@ def get_kafka_consumer(user: dict, group_id: str):
 
 def get_kafka_admin_client(user: dict):
     return AdminClient({
-        'bootstrap.servers': 'localhost:19092',
+        'bootstrap.servers': 'localhost:59092',
         'security.protocol': SECURITY_PROTOCOL,
         'sasl.mechanisms': SASL_MECHANISMS,
         'sasl.username': user["username"],
@@ -52,6 +68,27 @@ def get_kafka_admin_client_topic(user: dict):
 def get_cassandra_session():
     cluster = Cluster(CASSANDRA_HOSTS, port=CASSANDRA_PORT)
     return cluster.connect()
+
+def consume_and_broadcast(consumer: Consumer, manager: ConnectionManager, topic: str):
+    try:
+        consumer.subscribe([topic])
+        while True:
+            msg = consumer.poll(timeout=1.0)
+            if msg is None:
+                continue
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    continue
+                else:
+                    raise KafkaException(msg.error())
+            else:
+                message_data = msg.value().decode('utf-8')
+                # Broadcast the message to all connected WebSocket clients
+                asyncio.run(manager.broadcast(message_data))
+    except Exception as e:
+        print(f"Error in consumer: {e}")
+    finally:
+        consumer.close()
 
 def consume_and_write_to_cassandra(consumer: Consumer, session, table_name: str):
     try:
@@ -319,3 +356,22 @@ async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any]
 
     return {"message": f"Topic '{full_topic_name}' and table '{project_name}.{topic_name}' created successfully."}
 
+@router.post("/projects/{project_name}/{topic_name}/start_cassandra_writer")
+async def start_consumer(project_name: str, topic_name: str, user: dict = Depends(get_current_user)):
+    cassandra_session = get_cassandra_session()
+    group_id = f"{project_name}.{topic_name}_group"
+    consumer = get_kafka_consumer(user, group_id=group_id)
+    table_name = f"{project_name}.{topic_name}"
+    thread = threading.Thread(target=consume_and_write_to_cassandra, args=(consumer, cassandra_session, table_name))
+    thread.daemon = True
+    thread.start()
+    return {"message": f"Consumer started for topic '{topic_name}' and writing to Cassandra table '{table_name}'"}
+@router.post("/projects/{project_name}/{topic_name}/start_live_consumer")
+async def start_consumer(project_name: str, topic_name: str):
+    group_id = f"{project_name}.{topic_name}_live_group"
+    consumer = get_kafka_consumer({}, group_id=group_id)
+    topic = f"{project_name}.{topic_name}"
+    thread = threading.Thread(target=consume_and_broadcast, args=(consumer, manager, topic))
+    thread.daemon = True
+    thread.start()
+    return {"message": f"Consumer started for topic '{topic_name}' and broadcasting to WebSocket clients"}
