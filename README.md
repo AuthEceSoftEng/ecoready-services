@@ -9,14 +9,14 @@ These instructions will help you set up and run the FastAPI application on your 
 
 ### Prerequisites
 
-Make sure you have Python and pip installed on your machine. You can download Python from [python.org](https://www.python.org/).
+Make sure you have Python and pip installed on your machine.
 
 ### Installation
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/yourrepository.git
-    cd yourrepository
+    git clone https://github.com/AuthEceSoftEng/ecoready-services.git
+    cd ecoready-services
     ```
 
 2. Create a virtual environment and activate it:
@@ -32,7 +32,7 @@ Make sure you have Python and pip installed on your machine. You can download Py
 
 ### Running the Application
 
-To deploy the FastAPI services, run the following command:
+To deploy the Ecoready services, run the following command:
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
