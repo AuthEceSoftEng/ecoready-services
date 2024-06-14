@@ -7,6 +7,8 @@ from typing import Dict, Any
 import json
 import threading
 import time
+from datetime import datetime
+
 app = FastAPI()
 router = APIRouter()
 
@@ -16,7 +18,7 @@ SECURITY_PROTOCOL = 'SASL_PLAINTEXT'
 SASL_MECHANISMS = 'PLAIN'
 
 # Cassandra configuration
-CASSANDRA_HOSTS = ['155.207.19.242','155.207.19.243']
+CASSANDRA_HOSTS = ['155.207.19.243','155.207.19.242']
 CASSANDRA_PORT = 9042
 
 class ConnectionManager:
@@ -105,18 +107,11 @@ def consume_and_write_to_cassandra(consumer: Consumer, session, table_name: str)
             else:
                 # Parse message value
                 message_data = json.loads(msg.value().decode('utf-8'))
-                
-                # Ensure 'prod_timestamp' is present
-                if 'prod_timestamp' not in message_data:
-                    print(f"Missing 'prod_timestamp' in message: {message_data}")
-                    continue
-                
-                # Calculate 'day' from 'prod_timestamp'
-                day = time.strftime("%Y-%m-%d", time.gmtime(message_data['prod_timestamp'] / 1000))  # Divide by 1000 to convert to seconds
+                dt = datetime.strptime(message_data['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+                day = dt.strftime("%Y-%m-%d")
                 message_data['day'] = day
-                
                 # Use the key of the Kafka record as 'id'
-                message_data['id'] = msg.key().decode('utf-8')
+                message_data['key'] = msg.key().decode('utf-8')
                 
                 # Construct insert query
                 columns = ', '.join(message_data.keys())
@@ -302,7 +297,7 @@ async def grant_read_access(project_name: str, target_username: str, topic: str 
         raise HTTPException(status_code=500, detail=f"Failed to grant READ access: {str(e)}")
 
 @router.post("/projects/{project_name}/add_topic")
-async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any], user: dict = Depends(get_current_user)):
+async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any], message_key:str=None, user: dict = Depends(get_current_user)):
     # Step 1: Create Cassandra keyspace
     cassandra_session = get_cassandra_session()
     kafka_admin_client = get_kafka_admin_client_topic(user)
@@ -322,6 +317,21 @@ async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any]
         raise HTTPException(status_code=500, detail=f"Failed to create Kafka topic: {str(e)}")
     columns = []
     for key, value in message.items():
+        if key==message_key:
+            if isinstance(value, int):
+                columns.append(f"key int")
+            elif isinstance(value, float):
+                columns.append(f"key float")
+            elif isinstance(value, str):
+                columns.append(f"key text")
+            elif isinstance(value, bool):
+                columns.append(f"key boolean")
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported data type for key: {key}")
+            continue
+        if key in ('timestamp', 'Timestamp', 'TIMESTAMP'):
+            columns.append(f"timestamp timestamp")
+            continue
         if isinstance(value, int):
             columns.append(f"{key} int")
         elif isinstance(value, float):
@@ -336,18 +346,16 @@ async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any]
     columns_def = ", ".join(columns)
     create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {project_name}.{topic_name} (
-            id TEXT,
-            day DATE,
-            prod_timestamp TIMESTAMP,
             {columns_def},
-            PRIMARY KEY ((id, day), prod_timestamp)
-        ) WITH CLUSTERING ORDER BY (prod_timestamp DESC)
+            day DATE,
+            PRIMARY KEY ((key, day), timestamp)
+        ) WITH CLUSTERING ORDER BY (timestamp DESC)
     """
     try:
         cassandra_session.execute(create_table_query)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create Cassandra table: {str(e)}")
-    group_id = f"{project_name}.{topic_name}_group"
+    group_id = f"{project_name}.{topic_name}_writer_group"
     consumer = get_kafka_consumer(user, group_id=group_id)
     thread = threading.Thread(target=consume_and_write_to_cassandra, args=(consumer, cassandra_session, f"{project_name}.{topic_name}"))
     thread.daemon = True

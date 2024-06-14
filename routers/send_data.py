@@ -13,7 +13,7 @@ router = APIRouter()
 KAFKA_BOOTSTRAP_SERVERS = '155.207.19.243:59092'
 SECURITY_PROTOCOL = 'SASL_PLAINTEXT'
 SASL_MECHANISMS = 'PLAIN'
-
+flush_threshold = 30000
 
 def get_kafka_producer(user: dict):
     return Producer({
@@ -21,11 +21,12 @@ def get_kafka_producer(user: dict):
         'security.protocol': SECURITY_PROTOCOL,
         'sasl.mechanisms': SASL_MECHANISMS,
         'sasl.username': user["username"],
-        'sasl.password': user["password"]
+        'sasl.password': user["password"],
+        'queue.buffering.max.messages': 200000
     })
 
 @router.post("/projects/{project_name}/send_data/{topic_name}")
-async def send_data(project_name: str, topic_name: str, data: Union[Dict[str, Any], List[Dict[str, Any]]], user: dict = Depends(get_current_user)):
+async def send_data(project_name: str, topic_name: str,  data: Union[Dict[str, Any], List[Dict[str, Any]]], key: str = None, user: dict = Depends(get_current_user)):
     kafka_producer = get_kafka_producer(user)
     full_topic_name = f"{project_name}.{topic_name}"
 
@@ -33,11 +34,18 @@ async def send_data(project_name: str, topic_name: str, data: Union[Dict[str, An
         messages = [data]
     else:
         messages = data
+    for i, message_data in enumerate(messages):
+        for k in ['timestamp', 'Timestamp', 'TIMESTAMP']:
+            if k in message_data:
+                message_data['timestamp'] = message_data.pop(k)
+                break
+        if 'timestamp' not in message_data:
+            message_data['timestamp'] = datetime.utcnow().isoformat() + 'Z'
+        message_key = message_data.pop(key, user["username"])
+        kafka_producer.produce(full_topic_name, key=message_key, value=json.dumps(message_data))
+        if (i + 1) % flush_threshold == 0:
+            kafka_producer.flush()
 
-    for message_data in messages:
-        message_data["prod_timestamp"] = int(time.time() * 1000)
-        kafka_producer.produce(full_topic_name, key=user['username'], value=json.dumps(message_data))
-    
     kafka_producer.flush()
     
     return {"message": f"Data sent to topic '{full_topic_name}' successfully."}
