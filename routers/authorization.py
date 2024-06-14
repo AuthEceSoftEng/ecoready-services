@@ -1,11 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query,FastAPI
 from dependencies import get_current_user
 from typing import Dict, Any
 from confluent_kafka import KafkaError
 from confluent_kafka.admin import AdminClient, AclBinding, AclBindingFilter, AclOperation, AclPermissionType, ResourceType, ResourcePatternType
 
 TAG = "Authorization"
-
+app = FastAPI()
 router = APIRouter()
 
 
@@ -37,7 +37,7 @@ def acl_binding_to_dict(acl_binding):
         "permission_type": permission_type_map.get(acl_binding.permission_type, "UNKNOWN"),
     }
     return acl_dict
-@router.post("/set-topic-acl/")
+@router.post("/set-topic-acl/", tags=[TAG])
 async def set_topic_acl(topic_name: str, username: str,  operation: str = Query('READ', enum=['READ', 'WRITE', 'ALTER_CONFIGS', 'DESCRIBE_CONFIGS']) , user: dict = Depends(get_current_user)):
     kafka_conf = {
         'bootstrap.servers': bootstrap_servers,
@@ -74,7 +74,7 @@ async def set_topic_acl(topic_name: str, username: str,  operation: str = Query(
             raise HTTPException(status_code=403, detail=f"Authorization failed. You are not allowed to set ACLs.")
         else:
             raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-@router.post("/set-acl/")
+@router.post("/set-acl/", tags=[TAG])
 async def set_acl(resource_name: str, username: str, resource_type: str = Query('TOPIC', enum=['ANY', 'TOPIC', 'GROUP', 'BROKER']),  resource_pattern: str = Query('LITERAL', enum=['ANY', 'MATCH', 'LITERAL', 'PREFIXED']) , operation: str = Query('READ', enum=['READ', 'WRITE','ANY', 'ALL','CREATE','DELETE','ALTER','DESCRIBE','CLUSTER_ACTION', 'ALTER_CONFIGS', 'DESCRIBE_CONFIGS','IDEMPOTENT_WRITE']) , permission: str = Query('ALLOW', enum=['ANY', 'ALLOW', 'DENY']) , user: dict = Depends(get_current_user)):
     kafka_conf = {
         'bootstrap.servers': bootstrap_servers,
@@ -147,7 +147,7 @@ async def set_acl(resource_name: str, username: str, resource_type: str = Query(
             raise HTTPException(status_code=403, detail=f"Authorization failed. You are not allowed to set ACLs.")
         else:
             raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-@router.delete("/delete-acl/")
+@router.delete("/delete-acl/", tags=[TAG])
 async def delete_acl(resource_name: str, username: str, resource_type: str = Query('TOPIC', enum=['ANY', 'TOPIC', 'GROUP', 'BROKER']),  resource_pattern: str = Query('LITERAL', enum=['ANY', 'MATCH', 'LITERAL', 'PREFIXED']) , operation: str = Query('READ', enum=['READ','WRITE','ANY', 'ALL','CREATE','DELETE','ALTER','DESCRIBE','CLUSTER_ACTION', 'ALTER_CONFIGS', 'DESCRIBE_CONFIGS','IDEMPOTENT_WRITE']) , permission: str = Query('ALLOW', enum=['ANY', 'ALLOW', 'DENY']) , user: dict = Depends(get_current_user)): 
     kafka_conf = {
         'bootstrap.servers': bootstrap_servers,
@@ -220,7 +220,7 @@ async def delete_acl(resource_name: str, username: str, resource_type: str = Que
             raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
 
-@router.get("/get-user-acl/")
+@router.get("/get-user-acl/", tags=[TAG])
 async def get_user_acl(username: str, user: dict = Depends(get_current_user)):
     kafka_conf = {
         'bootstrap.servers': bootstrap_servers,
@@ -250,7 +250,7 @@ async def get_user_acl(username: str, user: dict = Depends(get_current_user)):
        else:
            raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-@router.get("/get-topic-acl/")
+@router.get("/get-topic-acl/", tags=[TAG])
 async def get_topic_acl(topic_name: str, user: dict = Depends(get_current_user)):
     kafka_conf = {
         'bootstrap.servers': bootstrap_servers,

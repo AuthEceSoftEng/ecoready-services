@@ -13,6 +13,8 @@ import tarfile
 import io
 from fastapi.responses import FileResponse
 from datetime import datetime, timedelta
+
+TAG = "Queries"
 app = FastAPI()
 router = APIRouter()
 
@@ -260,7 +262,7 @@ def format_value(value):
         return "'{}'".format(value)
     return value
 
-@router.get("/projects/{project_name}/{topic}/data/")
+@router.get("/projects/{project_name}/{topic}/data/", tags=[TAG])
 async def get_data(
     project_name: str,
     topic: str,
@@ -345,7 +347,7 @@ async def get_data(
         raise HTTPException(status_code=500, detail=f"Failed to execute query: {str(e)}")
 
 
-@router.get("/projects/{project_name}/{topic}/stats/")
+@router.get("/projects/{project_name}/{topic}/stats/", tags=[TAG])
 async def calculate_interval_stat(
     project_name: str,
     topic: str,
@@ -367,7 +369,7 @@ async def calculate_interval_stat(
 
 
 
-@router.get("/projects/{project_name}/{topic}/first_10_unix_timestamps/")
+@router.get("/projects/{project_name}/{topic}/first_10_unix_timestamps/", tags=[TAG])
 async def get_first_10_unix_timestamps(
     project_name: str,
     topic: str,
@@ -396,7 +398,7 @@ async def get_first_10_unix_timestamps(
 
 
 
-@router.get("/projects/{project_name}/{topic}/real-time-aggregation")
+@router.get("/projects/{project_name}/{topic}/real-time-aggregation", tags=[TAG])
 async def generate_script(
     project_name: str = Path(..., description="Name of the project"),
     topic: str = Path(..., description="Kafka topic"),

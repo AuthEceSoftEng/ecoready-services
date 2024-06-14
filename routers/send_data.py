@@ -7,6 +7,9 @@ import time
 import json
 import csv
 from io import StringIO
+
+TAG = "Send data"
+app = FastAPI()
 router = APIRouter()
 
 # Kafka configuration
@@ -25,7 +28,7 @@ def get_kafka_producer(user: dict):
         'queue.buffering.max.messages': 200000
     })
 
-@router.post("/projects/{project_name}/send_data/{topic_name}")
+@router.post("/projects/{project_name}/send_data/{topic_name}", tags=[TAG])
 async def send_data(project_name: str, topic_name: str,  data: Union[Dict[str, Any], List[Dict[str, Any]]], key: str = None, user: dict = Depends(get_current_user)):
     kafka_producer = get_kafka_producer(user)
     full_topic_name = f"{project_name}.{topic_name}"
@@ -50,7 +53,7 @@ async def send_data(project_name: str, topic_name: str,  data: Union[Dict[str, A
     
     return {"message": f"Data sent to topic '{full_topic_name}' successfully."}
 
-@router.post("/projects/{project_name}/send_csv/{topic_name}")
+@router.post("/projects/{project_name}/send_csv/{topic_name}", tags=[TAG])
 async def send_csv(project_name: str, topic_name: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     kafka_producer = get_kafka_producer(user)
     full_topic_name = f"{project_name}.{topic_name}"

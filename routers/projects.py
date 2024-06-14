@@ -9,6 +9,7 @@ import threading
 import time
 from datetime import datetime
 
+TAG = "Projects"
 app = FastAPI()
 router = APIRouter()
 
@@ -123,7 +124,7 @@ def consume_and_write_to_cassandra(consumer: Consumer, session, table_name: str)
         # Restart the consumer on failure
         consume_and_write_to_cassandra(consumer, session, table_name)
 
-@router.post("/create_project/{project_name}")
+@router.post("/create_project/{project_name}", tags=[TAG])
 async def create_project(project_name: str, username: str, user: dict = Depends(get_current_user)):
     # Step 1: Create Cassandra keyspace
     cassandra_session = get_cassandra_session()
@@ -231,7 +232,7 @@ async def create_project(project_name: str, username: str, user: dict = Depends(
         raise HTTPException(status_code=500, detail=f"Failed to set Kafka ACLs: {str(e)}")
 
 
-@router.post("/add_user/{username}")
+@router.post("/add_user/{username}", tags=[TAG])
 async def add_user(username: str, password: str, user: dict = Depends(get_current_user)):
     try:
         # Path to your JAAS configuration file
@@ -251,7 +252,7 @@ async def add_user(username: str, password: str, user: dict = Depends(get_curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/grant_read_access/{project_name}")
+@router.post("/grant_read_access/{project_name}", tags=[TAG])
 async def grant_read_access(project_name: str, target_username: str, topic: str = None, user: dict = Depends(get_current_user)):
     # Step 1: Verify that the current user has the necessary rights to grant permissions
     kafka_admin_client = get_kafka_admin_client(user)
@@ -296,7 +297,7 @@ async def grant_read_access(project_name: str, target_username: str, topic: str 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to grant READ access: {str(e)}")
 
-@router.post("/projects/{project_name}/add_topic")
+@router.post("/projects/{project_name}/add_topic", tags=[TAG])
 async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any], message_key:str=None, user: dict = Depends(get_current_user)):
     # Step 1: Create Cassandra keyspace
     cassandra_session = get_cassandra_session()
@@ -364,7 +365,7 @@ async def add_topic(project_name: str, topic_name: str , message: Dict[str, Any]
 
     return {"message": f"Topic '{full_topic_name}' and table '{project_name}.{topic_name}' created successfully."}
 
-@router.post("/projects/{project_name}/{topic_name}/start_cassandra_writer")
+@router.post("/projects/{project_name}/{topic_name}/start_cassandra_writer", tags=[TAG])
 async def start_consumer(project_name: str, topic_name: str, user: dict = Depends(get_current_user)):
     cassandra_session = get_cassandra_session()
     group_id = f"{project_name}.{topic_name}_group"
@@ -374,7 +375,7 @@ async def start_consumer(project_name: str, topic_name: str, user: dict = Depend
     thread.daemon = True
     thread.start()
     return {"message": f"Consumer started for topic '{topic_name}' and writing to Cassandra table '{table_name}'"}
-@router.post("/projects/{project_name}/{topic_name}/start_live_consumer")
+@router.post("/projects/{project_name}/{topic_name}/start_live_consumer", tags=[TAG])
 async def start_consumer(project_name: str, topic_name: str):
     group_id = f"{project_name}.{topic_name}_live_group"
     consumer = get_kafka_consumer({}, group_id=group_id)

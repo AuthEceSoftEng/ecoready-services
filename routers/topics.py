@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, FastAPI
 from dependencies import get_current_user
 from kafka_service import get_consumer, get_producer, delivery_report
 from kafka.errors import TopicAuthorizationFailedError, UnknownTopicOrPartitionError
@@ -9,6 +9,8 @@ from confluent_kafka import KafkaError
 from confluent_kafka.admin import AdminClient, ConfigResource, NewTopic
 from confluent_kafka.admin import AdminClient, AclBinding, AclOperation, AclPermissionType, ResourceType, ResourcePatternType
 
+TAG = "Topics"
+app = FastAPI()
 router = APIRouter()
 
 async def get_topic_config(topic_name: str, user: dict = Depends(get_current_user)):
@@ -36,7 +38,7 @@ async def get_topic_config(topic_name: str, user: dict = Depends(get_current_use
             raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get retention for topic {topic_name}: {str(e)}")
 
-@router.post("/create-topic/")
+@router.post("/create-topic/", tags=[TAG])
 async def create_kafka_topic(topic_name: str, partitions: int, user: dict = Depends(get_current_user)):
     bootstrap_servers = 'localhost:59092'  # Consider moving this to config or environment variables
     kafka_conf = {
@@ -64,7 +66,7 @@ async def create_kafka_topic(topic_name: str, partitions: int, user: dict = Depe
                     raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-@router.delete("/delete-topic/")
+@router.delete("/delete-topic/", tags=[TAG])
 async def delete_kafka_topic(topic_name: str, user: dict = Depends(get_current_user)):
     kafka_conf = {
     'bootstrap.servers': 'localhost:59092',
@@ -84,7 +86,7 @@ async def delete_kafka_topic(topic_name: str, user: dict = Depends(get_current_u
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-@router.post("/retention")
+@router.post("/retention", tags=[TAG])
 async def set_topic_retention(topic_name: str, retention_ms: int,  user: dict = Depends(get_current_user)):
     bootstrap_servers = 'localhost:59092'  # Consider moving this to config or environment variables
     kafka_conf = {
@@ -107,12 +109,12 @@ async def set_topic_retention(topic_name: str, retention_ms: int,  user: dict = 
         else:
             raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-@router.get("/get_retention/")
+@router.get("/get_retention/", tags=[TAG])
 async def get_topic_retention(topic_name: str, user: dict = Depends(get_current_user)):
     retention_ms = await get_topic_config(topic_name, user)
     return {"retention.ms": retention_ms}
 
-@router.post("/write/{topic_name}")
+@router.post("/write/{topic_name}", tags=[TAG])
 async def write_to_topic(topic_name: str, message: Dict[str, Any], user: dict = Depends(get_current_user)):
     producer = get_producer(user["username"], user["password"])
     message_str = json.dumps(message)
@@ -129,7 +131,7 @@ async def write_to_topic(topic_name: str, message: Dict[str, Any], user: dict = 
         else:
             raise HTTPException(status_code=500, detail="Kafka error ")
     return {"status": "message sent"}
-@router.get("/read/{topic_name}")
+@router.get("/read/{topic_name}", tags=[TAG])
 async def read_from_topic(topic_name: str, user: dict = Depends(get_current_user)):
     consumer = get_consumer(user["username"], user["password"])
 
