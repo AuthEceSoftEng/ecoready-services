@@ -36,3 +36,6 @@ To deploy the Ecoready services, run the following command:
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The page of the server should be at `http://localhost:8000/docs`
