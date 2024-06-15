@@ -1,7 +1,7 @@
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi import HTTPException, status, Depends
 import hashlib
-from services.cassandra_service import CassandraService
+from cassandra_service import CassandraService
 #from . import CassandraService
 
 security = HTTPBasic()
