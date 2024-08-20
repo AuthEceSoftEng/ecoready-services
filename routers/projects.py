@@ -387,3 +387,4 @@ async def start_consumer(project_name: str, topic_name: str):
 @router.get("/test", tags=[TAG])
 async def test_func():
     print("Test successful")
+    return True
