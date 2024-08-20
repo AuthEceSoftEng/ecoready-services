@@ -10,7 +10,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: 🧪 Run test script
-        run: echo 1
+        run: exit 1
   cd:
     needs: ci
     runs-on: ubuntu-latest
