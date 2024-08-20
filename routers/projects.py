@@ -384,3 +384,6 @@ async def start_consumer(project_name: str, topic_name: str):
     thread.daemon = True
     thread.start()
     return {"message": f"Consumer started for topic '{topic_name}' and broadcasting to WebSocket clients"}
+@router.get("/test", tags=[TAG])
+async def test_func():
+    print("Test successful")
