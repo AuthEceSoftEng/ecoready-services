@@ -1,0 +1,30 @@
+name: ci
+
+on: push
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v2
+
+      - name: 🧪 Run test script
+        run: echo 0
+  deploy:
+    if: ${{ false }}  # disable for now
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd ~/template-backend
+            git reset --hard origin/main
+            git pull https://${{ secrets.CLONE_TOKEN }}@github.com/robotics-4-all/template-backend main
+            bash -ci 'npm i --legacy-peer-deps'
+            bash -ci 'pm2 restart server'
