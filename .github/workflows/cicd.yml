@@ -22,8 +22,10 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            cd ~/template-backend
+            cd ~/ecoready/ecoready-services
             git reset --hard origin/main
-            git pull https://${{ secrets.CLONE_TOKEN }}@github.com/robotics-4-all/template-backend main
-            bash -ci 'npm i --legacy-peer-deps'
-            bash -ci 'pm2 restart server'
+            git pull https://${{ secrets.CLONE_TOKEN }}@github.com/AuthEceSoftEng/ecoready-services main
+            bash -ci 'python3 -m venv venv'
+            bash -ci 'source venv/bin/activate'
+            bash -ci 'pip install -r requirements.txt'
+            bash -ci 'pm2 restart ecoready_services_api'
