@@ -20,7 +20,7 @@ Make sure you have Python and pip installed on your machine.
     ```
 
 2. Create a virtual environment and activate it:
-    ```bash
+    ```bash 
     python -m venv env
     source env/bin/activate  # On Windows use `env\Scripts\activate`
     ```
