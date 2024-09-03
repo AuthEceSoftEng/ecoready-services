@@ -28,7 +28,7 @@ TAG = "Organization Management"
 app = FastAPI()
 router = APIRouter()
 
-CASSANDRA_CONTACT_POINTS = ['155.207.19.243']  # Replace with >
+CASSANDRA_CONTACT_POINTS = ['155.207.19.242']  # Replace with >
 CASSANDRA_PORT = 9042
 KAFKA_BOOTSTRAP_SERVERS='155.207.19.243:59096'
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
@@ -43,7 +43,7 @@ execution_profile = ExecutionProfile(
 
 # Apply the execution profile to the cluster
 cluster = Cluster(
-    contact_points=['155.207.19.243'],
+    contact_points=['155.207.19.242'],
     port=9042,
     execution_profiles={EXEC_PROFILE_DEFAULT: execution_profile}
 )
@@ -727,7 +727,7 @@ async def create_collection(
             name=container_name,
             environment={
                 "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59096",
-                "CASSANDRA_CONTACT_POINTS": "155.207.19.243",
+                "CASSANDRA_CONTACT_POINTS": "155.207.19.242",
                 "CASSANDRA_PORT": "9042",
                 "COLLECTION_NAME": name,
                 "PROJECT_NAME": project_name,
@@ -1060,7 +1060,7 @@ async def send_data_to_collection(
 
         # Ensure 'timestamp' is present in the message, if not, add it with the current UTC time
         if 'timestamp' not in message:
-            message['timestamp'] = datetime.utcnow().isoformat() + 'Z'
+            message['timestamp'] = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
         # Convert the 'timestamp' string to a datetime object
         timestamp_dt = datetime.fromisoformat(message['timestamp'].replace('Z', '+00:00'))
 
@@ -1407,7 +1407,7 @@ async def start_live_data_consumer(
             name=container_name,
             environment={
                 "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59096",
-                "CASSANDRA_CONTACT_POINTS": "155.207.19.243",
+                "CASSANDRA_CONTACT_POINTS": "155.207.19.242",
                 "CASSANDRA_PORT": "9042",
                 "COLLECTION_NAME": collection_name,
                 "PROJECT_NAME": project_name,
@@ -1444,3 +1444,171 @@ async def stop_live_data_consumer(
         raise HTTPException(status_code=500, detail=f"Failed to stop and remove consumer container: {str(e)}")
 
     return {"message": f"Consumer container for collection '{collection_name}' stopped and removed."}
+import tarfile
+import io, os
+@router.post("/api/organizations/{organization_name}/projects/{project_name}/collections/{collection_name}/live-aggregation", tags=[TAG])
+async def post_live_aggregation(
+    organization_name: str,
+    project_name: str,
+    collection_name: str,
+    attribute: str = Body(..., description="Collection’s attribute to perform computation on"),
+    stat: str = Body(..., description="Statistical operation to perform", enum=["avg", "median", "max", "min", "sum", "count"]),
+    interval: str = Body(..., description="Time interval to group the data by (e.g., every 1 hour)"),
+    interval_type: str = Body(..., description="Type of the interval. Can be tumbling or sliding", enum=["tumbling", "sliding"]),
+    sliding_factor: Optional[int] = Body(None, description="Sliding factor for the interval, required if interval_type is sliding"),
+    group_by: Optional[str] = Body(None, description="Field to group the data by"),
+    order_by: Optional[str] = Body(None, description="Field to order the data by and the direction (asc or desc)"),
+    user: dict = Depends(get_current_user)
+):
+    # Check if the user has the necessary role
+    if user["role"] not in ["master", "read"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Insufficient permissions")
+
+    # Define parameters for Flink script generation
+    topic_name = f"{organization_name}.{project_name}.{collection_name}"
+    sink_topic = f"{organization_name}.{project_name}.{collection_name}.{interval}.{stat}.{attribute}"
+    # Split the interval string into its components
+    interval_parts = interval.split('_')
+
+    # Check if the interval string has exactly three parts
+    if len(interval_parts) != 3 or interval_parts[0] != "every":
+        raise HTTPException(status_code=400, detail="Invalid interval format. Expected format: 'every_n_units'")
+
+    # Extract the 'n' and 'units' components
+    every_n = int(interval_parts[1])
+    units = interval_parts[2]
+
+    # Validate sliding factor if the interval is sliding
+    if interval_type == "sliding" and not sliding_factor:
+        raise HTTPException(status_code=400, detail="Sliding factor is required when interval_type is sliding.")
+
+    # Generate the Flink script
+    script_content = generate_flink_script(
+        project_name=project_name,
+        topic_name=topic_name,
+        attribute=attribute,
+        every_n=every_n,
+        units=units,
+        metric=stat,
+        interval_type=interval_type,
+        sliding_factor=sliding_factor,
+        group_by=group_by,
+        order_by=order_by
+    )
+    
+    # Save the script to a file
+    script_file_path = f"{organization_name}.{project_name}.{collection_name}_live_aggregation.py"
+    with open(script_file_path, "w") as script_file:
+        script_file.write(script_content)
+    
+    # Deploy the script to Flink JobManager
+    try:
+        exec_log = deploy_flink_script(script_file_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    return {"status": "success", "log": exec_log.output.decode('utf-8')}
+
+def generate_flink_script(
+    project_name: str,
+    topic_name: str,
+    attribute: str,
+    every_n: int,
+    units: str,
+    metric: str,
+    interval_type: str,
+    sliding_factor: Optional[int],
+    group_by: Optional[str],
+    order_by: Optional[str]
+) -> str:
+    source_table_sql = f"""
+t_env.execute_sql(\"\"\"
+CREATE TABLE KafkaSource (
+    `key` STRING,
+    `{attribute}` DOUBLE,
+    `timestamp` STRING,
+    `event_time` AS TO_TIMESTAMP(`timestamp`, 'yyyy-MM-dd''T''HH:mm:ss''Z'''),
+    WATERMARK FOR `event_time` AS `event_time` - INTERVAL '5' SECOND
+) WITH (
+    'connector' = 'kafka',
+    'topic' = '{topic_name}',
+    'properties.bootstrap.servers' = '155.207.19.243:19096',
+    'key.format' = 'raw',
+    'key.fields' = 'key',
+    'value.format' = 'json',
+    'value.fields-include' = 'EXCEPT_KEY',
+    'scan.startup.mode' = 'earliest-offset'
+)
+\"\"\")
+"""
+    
+    sink_topic = f"{topic_name}.{every_n}{units}.{metric}.{attribute}"
+    sink_table_sql = f"""
+t_env.execute_sql(\"\"\"
+CREATE TABLE KafkaSink (
+    `key` STRING,
+    window_start TIMESTAMP(3),
+    window_end TIMESTAMP(3),
+    `count` BIGINT,
+    {metric}_{attribute} DOUBLE
+) WITH (
+    'connector' = 'kafka',
+    'topic' = '{sink_topic}',
+    'properties.bootstrap.servers' = '155.207.19.243:19096',
+    'format' = 'json'
+)
+\"\"\")
+"""
+    
+    if interval_type == "tumbling":
+        window_start_sql = f"TUMBLE_START(`event_time`, INTERVAL '{every_n}' {units.upper()})"
+        window_end_sql = f"TUMBLE_END(`event_time`, INTERVAL '{every_n}' {units.upper()})"
+        window_sql = f"TUMBLE(`event_time`, INTERVAL '{every_n}' {units.upper()})"
+    elif interval_type == "sliding":
+        window_start_sql = f"HOP_START(event_time, INTERVAL '{sliding_factor}' {units.upper()}, INTERVAL '{every_n}' {units.upper()})"
+        window_end_sql = f"HOP_END(event_time, INTERVAL '{sliding_factor}' {units.upper()}, INTERVAL '{every_n}' {units.upper()})"
+        window_sql = f"HOP(event_time, INTERVAL '{sliding_factor}' {units.upper()}, INTERVAL '{every_n}' {units.upper()})"
+    else:
+        raise ValueError(f"Unsupported interval type: {interval_type}")
+    
+    aggregation_sql = f"""
+t_env.execute_sql(\"\"\"
+INSERT INTO KafkaSink
+SELECT
+    `key`,
+    {window_start_sql} as window_start,
+    {window_end_sql} as window_end,
+    COUNT(*) as `count`,
+    {metric.upper()}({attribute}) as {metric}_{attribute}
+FROM KafkaSource
+GROUP BY `key`, {window_sql}
+\"\"\")
+"""
+ 
+    return f"""
+from pyflink.table import TableEnvironment, EnvironmentSettings
+
+env_settings = EnvironmentSettings.new_instance().in_streaming_mode().build()
+t_env = TableEnvironment.create(env_settings)
+table_config = t_env.get_config().set("table.exec.source.idle-timeout", "10000 ms")
+
+{source_table_sql}
+{sink_table_sql}
+{aggregation_sql}
+"""
+
+def deploy_flink_script(script_file_path: str):
+    client = docker.from_env()
+    container = client.containers.get('test-flink-jobmanager19-1')
+    
+    with open(script_file_path, 'rb') as script_file:
+        tar_stream = io.BytesIO()
+        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+            tar_info = tarfile.TarInfo(name=os.path.basename(script_file_path))
+            tar_info.size = os.path.getsize(script_file_path)
+            tar.addfile(tar_info, script_file)
+        tar_stream.seek(0)
+        container.put_archive('/opt/flink', tar_stream)
+    
+    exec_log = container.exec_run(f'/opt/flink/bin/flink run --python /opt/flink/{os.path.basename(script_file_path)}  --jarfile flink-sql-connector-kafka-3.0.2-1.18.jar')
+    return exec_log
