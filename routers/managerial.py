@@ -28,7 +28,7 @@ TAG = "Organization Management"
 app = FastAPI()
 router = APIRouter()
 
-CASSANDRA_CONTACT_POINTS = ['155.207.19.242']  # Replace with >
+CASSANDRA_CONTACT_POINTS = ['155.207.19.242','155.207.19.243']  # Replace with >
 CASSANDRA_PORT = 9042
 KAFKA_BOOTSTRAP_SERVERS='155.207.19.243:59096'
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
