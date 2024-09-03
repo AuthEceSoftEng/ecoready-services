@@ -30,7 +30,7 @@ users_db = {
     }
 }
 # Cassandra configuration
-CASSANDRA_CONTACT_POINTS = ['155.207.19.243','155.207.19.242']  # Replace with >
+CASSANDRA_CONTACT_POINTS = ['155.207.19.242']  # Replace with >
 CASSANDRA_PORT = 9042
 
 cluster = Cluster(CASSANDRA_CONTACT_POINTS, port=CASSANDRA_PORT)

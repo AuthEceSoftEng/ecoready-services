@@ -19,7 +19,7 @@ app = FastAPI()
 router = APIRouter()
 
 # Cassandra configuration
-CASSANDRA_CONTACT_POINTS = ['155.207.19.243']  # Replace with your Cassandra contact points
+CASSANDRA_CONTACT_POINTS = ['155.207.19.242','155.207.19.243']  # Replace with your Cassandra contact points
 CASSANDRA_PORT = 9042
 
 def get_cassandra_session():
