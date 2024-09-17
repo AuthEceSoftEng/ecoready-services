@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+routers/_pycache/
 # C extensions
 *.so
 

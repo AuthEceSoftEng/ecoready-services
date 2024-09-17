@@ -30,7 +30,7 @@ router = APIRouter()
 
 CASSANDRA_CONTACT_POINTS = ['155.207.19.242']  # Replace with >
 CASSANDRA_PORT = 9042
-KAFKA_BOOTSTRAP_SERVERS='155.207.19.243:59096'
+KAFKA_BOOTSTRAP_SERVERS='155.207.19.243:59498'
 from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
 from cassandra.policies import RetryPolicy
 from cassandra.query import SimpleStatement
@@ -646,6 +646,7 @@ async def create_collection(
     tags: List[str] = Query(...),
     user: dict = Depends(get_current_user)
 ):
+    print(schema)
     # Check if the user has the master role
     if user["role"] != "master":
         raise HTTPException(status_code=403, detail="Forbidden: Master key required")
@@ -705,8 +706,8 @@ async def create_collection(
     # Create the Kafka topic
     kafka_topic_name = f"{organization_name.lower()}.{project_name.lower()}.{name.lower()}"
 
-    kafka_admin_client = AdminClient({'bootstrap.servers': '155.207.19.243:59096'})
-    new_topic = NewTopic(kafka_topic_name, num_partitions=4, replication_factor=2)
+    kafka_admin_client = AdminClient({'bootstrap.servers': '155.207.19.243:59498'})
+    new_topic = NewTopic(kafka_topic_name, num_partitions=4, replication_factor=1)
     fs = kafka_admin_client.create_topics([new_topic])
     for topic, f in fs.items():
         try:
@@ -726,7 +727,7 @@ async def create_collection(
             "kafka-cassandra-consumer",  # Replace with your actual image name
             name=container_name,
             environment={
-                "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59096",
+                "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59498",
                 "CASSANDRA_CONTACT_POINTS": "155.207.19.242",
                 "CASSANDRA_PORT": "9042",
                 "COLLECTION_NAME": name,
@@ -861,7 +862,7 @@ async def delete_collection(
 
     # Delete the Kafka topic
     kafka_topic_name = f"{organization_name.lower()}.{project_name.lower()}.{collection_name.lower()}"
-    kafka_admin_client = AdminClient({'bootstrap.servers': '155.207.19.243:59096'})
+    kafka_admin_client = AdminClient({'bootstrap.servers': '155.207.19.243:59498'})
     try:
         kafka_admin_client.delete_topics([kafka_topic_name])
     except Exception as e:
@@ -1003,7 +1004,7 @@ from typing import Dict, Any, Union, List
 from confluent_kafka import Producer
 
 # Kafka configuration constants
-KAFKA_BOOTSTRAP_SERVERS = '155.207.19.243:59096'
+KAFKA_BOOTSTRAP_SERVERS = '155.207.19.243:59498'
 flush_threshold = 3000
 
 def get_kafka_producer():
@@ -1057,7 +1058,8 @@ async def send_data_to_collection(
         # Ensure 'key' is present in the message
         if 'key' not in message:
             message['key'] = "key"
-
+        if 'field_id' in message:
+            message['key'] = message['field_id']
         # Ensure 'timestamp' is present in the message, if not, add it with the current UTC time
         if 'timestamp' not in message:
             message['timestamp'] = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -1152,8 +1154,11 @@ async def get_collection_data(
     query = f"SELECT {select_clause} FROM {keyspace_name}.{table_name}"
     # Add filters to the query
     conditions = []
+    print(1)
+    print(filters)
     if filters:
         filters_list = json.loads(filters)  # Parse the filters JSON string into a Python list
+        print(filters_list)
         for f in filters_list:
             if f['operator'] == "or":
                 or_conditions = []
@@ -1406,7 +1411,7 @@ async def start_live_data_consumer(
             f"kafka-live-consumer",  # Replace with your actual image name
             name=container_name,
             environment={
-                "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59096",
+                "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59498",
                 "CASSANDRA_CONTACT_POINTS": "155.207.19.242",
                 "CASSANDRA_PORT": "9042",
                 "COLLECTION_NAME": collection_name,
@@ -1532,7 +1537,7 @@ CREATE TABLE KafkaSource (
 ) WITH (
     'connector' = 'kafka',
     'topic' = '{topic_name}',
-    'properties.bootstrap.servers' = '155.207.19.243:19096',
+    'properties.bootstrap.servers' = '155.207.19.243:19496',
     'key.format' = 'raw',
     'key.fields' = 'key',
     'value.format' = 'json',
@@ -1554,7 +1559,7 @@ CREATE TABLE KafkaSink (
 ) WITH (
     'connector' = 'kafka',
     'topic' = '{sink_topic}',
-    'properties.bootstrap.servers' = '155.207.19.243:19096',
+    'properties.bootstrap.servers' = '155.207.19.243:19496',
     'format' = 'json'
 )
 \"\"\")
