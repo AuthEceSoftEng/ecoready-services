@@ -3,7 +3,7 @@
 Ecoready Services exposes a Swagger UI, via which anyone can see the services and call them (if they are authorized), located at http://155.207.19.243:8000/docs .
 
 
-## Getting Started
+## Getting Started 
 
 These instructions will help you set up and run the FastAPI application on your local machine.
 
@@ -20,7 +20,7 @@ Make sure you have Python and pip installed on your machine.
     ```
 
 2. Create a virtual environment and activate it:
-    ```bash
+    ```bash 
     python -m venv env
     source env/bin/activate  # On Windows use `env\Scripts\activate`
     ```
