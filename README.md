@@ -17,7 +17,7 @@ Make sure you have Python and pip installed on your machine.
     ```bash
     git clone https://github.com/AuthEceSoftEng/ecoready-services.git
     cd ecoready-services
-    ```
+    ``` 
 
 2. Create a virtual environment and activate it:
     ```bash 
