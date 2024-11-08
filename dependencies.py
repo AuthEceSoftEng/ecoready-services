@@ -1,85 +1,131 @@
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi import HTTPException, status, Depends
-import hashlib
-from cassandra.cluster import Cluster,Session
-from cassandra_service import CassandraService
-#from . import CassandraService
-from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer, HTTPAuthorizationCredentials
-from typing import  Optional
-from fastapi import Depends, FastAPI, HTTPException, status
-from typing_extensions import Annotated
-bearer_security = HTTPBearer(auto_error=False)
-basic_security = HTTPBasic(auto_error=False)
+# app/dependencies.py
 
-users_db = {
-    "alice": {
-        "username": "alice",
-        "password": "alice-secret"
-    },
-    "bob": {
-        "username": "bob",
-        "password": "bob-secret"
-    },
-    "kafka": {
-        "username": "kafka",
-        "password": "pass123"
-    },
-    "Admin": {
-        "username": "Admin",
-        "password": "pass123"
-    }
-}
-# Cassandra configuration
-CASSANDRA_CONTACT_POINTS = ['155.207.19.242']  # Replace with >
-CASSANDRA_PORT = 9042
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader, HTTPAuthorizationCredentials
+from collections.abc import Mapping, Sequence
+from jose import JWTError, jwt
+from services.auth_service import verify_jwt_token
+from utilities.user_utils import get_user_by_username
+from utilities.cassandra_connector import get_cassandra_session
+from utilities.organization_utils import get_organization_by_id
+from utilities.project_utils import get_project_by_id
+import re
+import uuid
+from typing import Optional,List
 
-cluster = Cluster(CASSANDRA_CONTACT_POINTS, port=CASSANDRA_PORT)
-session=cluster.connect('metadata')
 
-def get_user_from_db(username: str):
-    query = "SELECT username, password, organization_id FROM user WHERE username=%s LIMIT 1 allow filtering"
-    user = session.execute(query, (username,)).one()
-    if user:
-        return {
-            "username": user.username,
-            "password": user.password,
-            "organization_id": user.organization_id,
-        }
-    return None
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token", auto_error=False)
+header_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def get_current_user_from_jwt(token: str = Depends(oauth2_scheme)):
+    if token is not None:
+        username = verify_jwt_token(token)
+        user = get_user_by_username(username)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        return user
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No credentials provided")
 def validate_api_key(api_key: str):
     query = "SELECT key_type, project_id FROM api_keys WHERE api_key=%s LIMIT 1 allow filtering"
-    key_data = session.execute(query, (api_key,)).one()
-    if key_data:
-        return key_data.key_type, key_data.project_id
-    return None, None
+    session = get_cassandra_session()
+    try:
+        key_data = session.execute(query, (api_key,)).one()
+        if key_data:
+            return key_data.key_type, key_data.project_id
+    except:
+        raise HTTPException(status_code=status.HTTP_401_FORBIDDEN, detail="Invalid API key")
 
-def get_current_user(
-    bearer_credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer_security)],
-    basic_credentials: Annotated[Optional[HTTPBasicCredentials], Depends(basic_security)]
+def check_api_key(key_type: str, key_project_id: uuid.UUID, project_id: uuid.UUID, accepted_roles: List[str]):
+    if project_id != key_project_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this project")
+    if key_type not in accepted_roles:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Insufficient privileges to access this resource")
+    return True
+def verify_superadmin(current_user: dict = Depends(get_current_user_from_jwt)):
+    if current_user.role != "superadmin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have superadmin privileges"
+        )
+    return current_user
+
+def verify_user_belongs_to_organization(
+    organization_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user_from_jwt)
 ):
-    if basic_credentials:
-        # Basic Authentication (Admin or Regular User)
-        if basic_credentials.username == "admin" and basic_credentials.password == "pass123":
-            return {"username": "admin", "role": "admin"}
+    # Check if the user is a superadmin or belongs to the organization
+    if current_user.role != "superadmin" and current_user.organization_id != organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You don't have access to this organization."
+        )
+    return current_user
+
+
+def verify_endpoint_access(
+        organization_id: uuid.UUID,
+        project_id: uuid.UUID,
+        jwt_token: Optional[str] = Depends(oauth2_scheme),
+        api_key: Optional[HTTPAuthorizationCredentials] = Depends(header_scheme)
+):
+    roles = ['master','read','write']
+    if jwt_token:
+        return verify_user_belongs_to_organization(organization_id, get_current_user_from_jwt(jwt_token))
+    elif api_key:
+        return verify_api_key_access(project_id, roles, api_key)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No credentials provided"
+        )
+def verify_master_access(
+        organization_id: uuid.UUID,
+        project_id: uuid.UUID,
+        jwt_token: Optional[str] = Depends(oauth2_scheme),
+        api_key: Optional[HTTPAuthorizationCredentials] = Depends(header_scheme)
+):
+    if jwt_token:
+        return verify_user_belongs_to_organization(organization_id, get_current_user_from_jwt(jwt_token))
+    elif api_key:
+        return verify_api_key_access(project_id, ['master'], api_key)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No credentials provided"
+        )
+def verify_api_key_access(
+        project_id: uuid.UUID,
+        roles: List[str] = ['master','read','write'],
+        api_key: Optional[HTTPAuthorizationCredentials] = Depends(header_scheme)
+):
+    key_type, key_project_id = validate_api_key(api_key)
+    return check_api_key(key_type, key_project_id, project_id, roles)
+
+def contains_special_characters(s, allow_spaces=True, allow_underscores=True):
+    if s.strip() == "":
+        return True
+    # Regex pattern that matches any special character except underscore
+    if allow_underscores:
+        if allow_spaces:
+            pattern = r"[^a-zA-Z0-9_ ]"
         else:
-            user = get_user_from_db(basic_credentials.username)
-            if user and user["password"] == basic_credentials.password:
-                return {"username": basic_credentials.username, "organization_id": user["organization_id"]}
-            else:
-                raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    elif bearer_credentials:
-        # Bearer Authentication (Token-based)
-        try:
-            api_key_type, project_id = validate_api_key(bearer_credentials.credentials)
-            if api_key_type:
-                return {"role": api_key_type, "project_id": project_id, "key":bearer_credentials.credentials}
-            else:
-                raise HTTPException(status_code=403, detail="Invalid API Key")
-        except Exception:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
+            pattern = r"[^a-zA-Z0-9_]"
     else:
-        # No credentials provided
-        raise HTTPException(status_code=401, detail="Credentials not provided")
+        pattern = r"[^a-zA-Z0-9]"
+    # Search for the pattern in the string
+    if re.search(pattern, s):
+        return True
+    else:
+        return False
+
+def check_organization_exists(organization_id: uuid.UUID):
+    organization = get_organization_by_id(organization_id)
+    if not organization:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
+    return organization
+
+def check_project_exists(project_id: uuid.UUID, organization_id: uuid.UUID):
+    project = get_project_by_id(project_id, organization_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    return project
 

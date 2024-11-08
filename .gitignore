@@ -6,6 +6,11 @@ routers/_pycache/
 # C extensions
 *.so
 
+
+.env
+test.py
+.venv
+
 # Distribution / packaging
 .Python
 build/
