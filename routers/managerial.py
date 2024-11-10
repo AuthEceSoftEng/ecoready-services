@@ -1154,11 +1154,8 @@ async def get_collection_data(
     query = f"SELECT {select_clause} FROM {keyspace_name}.{table_name}"
     # Add filters to the query
     conditions = []
-    print(1)
-    print(filters)
     if filters:
         filters_list = json.loads(filters)  # Parse the filters JSON string into a Python list
-        print(filters_list)
         for f in filters_list:
             if f['operator'] == "or":
                 or_conditions = []
@@ -1229,36 +1226,49 @@ def generate_filter_condition(prop_name, operator, prop_value):
         return f"{prop_name} NOT CONTAINS '{prop_value}'"
     return ""
 
-def get_interval_start(timestamp, interval_unit, interval_value=1):
-    if interval_unit == 'minutes':
-        # Align to the start of the minute interval (e.g., 00, 20, 40 for 20-minute intervals)
-        total_minutes = (timestamp.hour * 60) + timestamp.minute
-        interval_start_minutes = (total_minutes // interval_value) * interval_value
-        hours, minutes = divmod(interval_start_minutes, 60)
-        return timestamp.replace(hour=hours % 24, minute=minutes, second=0, microsecond=0)
-    elif interval_unit == 'hours':
-        # Align to the start of the hour interval
-        interval_start = timestamp.replace(minute=0, second=0, microsecond=0)
-        total_hours = (interval_start.hour // interval_value) * interval_value
-        return interval_start.replace(hour=total_hours)
-    elif interval_unit == 'days':
-        # Align to the start of the day interval
-        interval_start = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+def get_interval_start(timestamp, reference_time, interval_unit, interval_value=1):
+    if interval_unit.lower() in ['minutes', 'minute']:
+        # Align to the start of the minute interval from the reference point
+        total_minutes_since_reference = int((timestamp - reference_time).total_seconds() // 60)
+        interval_start_minutes = (total_minutes_since_reference // interval_value) * interval_value
+        interval_start = reference_time + timedelta(minutes=interval_start_minutes)
+        return interval_start.replace(second=0, microsecond=0)
+
+    elif interval_unit.lower() in ['hours', 'hour']:
+        # Align to the start of the hour interval from the reference point
+        total_hours_since_reference = int((timestamp - reference_time).total_seconds() // 3600)
+        interval_start_hours = (total_hours_since_reference // interval_value) * interval_value
+        interval_start = reference_time + timedelta(hours=interval_start_hours)
+        return interval_start.replace(minute=0, second=0, microsecond=0)
+
+    elif interval_unit.lower() in ['day', 'days']:
+        # Align to the start of the day interval, using the reference time
+        start_date = reference_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        days_offset = (timestamp - start_date).days % interval_value
+        interval_start = start_date + timedelta(days=((timestamp - start_date).days - days_offset))
         return interval_start
-    elif interval_unit == 'weeks':
-        # Align to the start of the week interval (Monday)
-        interval_start = timestamp - timedelta(days=timestamp.weekday())
-        interval_start = interval_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        return interval_start
-    elif interval_unit == 'months':
-        # Align to the start of the month interval
-        interval_start = timestamp.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        return interval_start
+
+    elif interval_unit.lower() in ['weeks', 'week']:
+        # Align to the start of the week interval, starting from the reference week (align to Monday)
+        start_of_week = reference_time - timedelta(days=reference_time.weekday())
+        weeks_since_reference = (timestamp - start_of_week).days // 7
+        interval_start_week = (weeks_since_reference // interval_value) * interval_value
+        interval_start = start_of_week + timedelta(weeks=interval_start_week)
+        return interval_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    elif interval_unit.lower() in ['month', 'months']:
+        # Calculate the "interval_value" month start from the reference time
+        month_offset = ((timestamp.year - reference_time.year) * 12 + timestamp.month - reference_time.month) % interval_value
+        new_month = timestamp.month - month_offset
+        if new_month <= 0:
+            new_month += 12
+            return timestamp.replace(year=timestamp.year - 1, month=new_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return timestamp.replace(month=new_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+
     else:
         raise ValueError(f"Unsupported interval unit: {interval_unit}")
 
-
-
+# Modify the aggregate_data function to support intervals consistently aligned with reference time
 def aggregate_data(data, interval_value, interval_unit, stat, attribute, group_by):
     df = pd.DataFrame(data)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -1267,11 +1277,12 @@ def aggregate_data(data, interval_value, interval_unit, stat, attribute, group_b
     if group_by not in df.columns:
         raise KeyError(f"The column '{group_by}' does not exist in the data.")
 
-    # Find the earliest timestamp for each group (based on group_by or key)
-    earliest_times = df.groupby(group_by)['timestamp'].min().to_dict()
-    print(earliest_times)
-    # Calculate the interval start times
-    df['interval_start'] = df.apply(lambda row: get_interval_start(row['timestamp'], interval_unit, interval_value), axis=1)
+    # Find the earliest timestamp to use as a reference point for interval calculation
+    reference_time = df['timestamp'].min()
+
+    # Calculate the interval start times consistently using the reference time
+    df['interval_start'] = df.apply(lambda row: get_interval_start(row['timestamp'], reference_time, interval_unit, interval_value), axis=1)
+
     # Check if 'interval_start' was successfully added
     if 'interval_start' not in df.columns:
         raise KeyError("The 'interval_start' column could not be created.")
@@ -1294,9 +1305,8 @@ def aggregate_data(data, interval_value, interval_unit, stat, attribute, group_b
     grouped[f"{stat}_{attribute}"] = grouped[f"{stat}_{attribute}"].round(3)
     return grouped.to_dict(orient='records')
 
-
+# Update the API endpoint to properly parse the two-week interval
 import pandas as pd
-
 TAG = "Get Data Statistics"
 @router.get("/api/organizations/{organization_name}/projects/{project_name}/collections/{collection_name}/statistics", tags=[TAG])
 async def get_collection_statistics(
@@ -1308,7 +1318,7 @@ async def get_collection_statistics(
     interval: str = "every_2_days",
     start_time: str = Query(None, description="Start time in format YYYY-MM-DDTHH:MM:SSZ"),
     end_time: str = Query(None, description="End time in format YYYY-MM-DDTHH:MM:SSZ"),
-    filters: List[str] = Query(None),
+    filters: Optional[str] = Query(None),
     order: Optional[str] = Query(None, enum=["asc", "desc"]),
     group_by: Optional[str] = Query(None),
     user: dict = Depends(get_current_user)
@@ -1367,8 +1377,17 @@ async def get_collection_statistics(
             else:
                 conditions.append(generate_filter_condition(f['property_name'], f['operator'], f['property_value']))
 
+    # Add WHERE conditions if there are any
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
+
+    # Add time conditions, starting with WHERE if there are no existing conditions
+    if start_time and end_time:
+        if not conditions:  # If there were no previous conditions, start with WHERE
+            query += f" WHERE timestamp >= '{start_time}' AND timestamp <= '{end_time}'"
+        else:
+            query += f" AND timestamp >= '{start_time}' AND timestamp <= '{end_time}'"
+
     query += " ALLOW FILTERING"
     # Execute the query and fetch data
     results = session.execute(query)
