@@ -909,8 +909,8 @@ async def get_all_collections(
         raise HTTPException(status_code=404, detail="Project not found")
     
     # Case 2: The project exists but the project ID does not match the token's project ID
-    if project.id != user["project_id"]:
-        raise HTTPException(status_code=403, detail="Access denied")
+    if  project.id not in user["project_id"]:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
     # Fetch all collections for the project
     collections_query = "SELECT id, collection_name, description, creation_date, tags FROM collection WHERE project_id=%s allow filtering"
@@ -1131,7 +1131,8 @@ async def get_collection_data(
     # If project is not found
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+    if  project.id not in user["project_id"]:
+        raise HTTPException(status_code=403, detail="Access denied.")
     # Fetch the collection's schema
     keyspace_name = organization_name.lower()
     table_name = f"{project_name.lower()}_{collection_name.lower()}"
@@ -1342,7 +1343,8 @@ async def get_collection_statistics(
     # If project is not found
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+    if  project.id not in user["project_id"]:
+        raise HTTPException(status_code=403, detail="Access denied.")
     # Fetch the collection's schema
     keyspace_name = organization_name.lower()
     table_name = f"{project_name.lower()}_{collection_name.lower()}"
@@ -1636,3 +1638,129 @@ def deploy_flink_script(script_file_path: str):
     
     exec_log = container.exec_run(f'/opt/flink/bin/flink run --python /opt/flink/{os.path.basename(script_file_path)}  --jarfile flink-sql-connector-kafka-3.0.2-1.18.jar')
     return exec_log
+
+@router.post("/api/organizations/{organization_name}/projects/{project_name}/collections/create", tags=[TAG])
+async def create_new_collection(
+    organization_name: str,
+    project_name: str,
+    name: str,
+    description: str,
+    schema: Dict[str, Any],
+    tags: List[str] = Query(...),
+    user: dict = Depends(get_current_user),
+    additional_partition_keys: List[str] = Query(None),  # Optional additional partition keys
+    additional_clustering_keys: List[str] = Query(None),  # Optional additional clustering keys
+    clustering_key_format: str = Query("day"),  # Optional clustering key format
+):    
+    # Check if the user has the master role
+    if user["role"] != "master":
+        raise HTTPException(status_code=403, detail="Forbidden: Master key required")
+
+    # Fetch the organization ID using the organization name
+    org_query = "SELECT id FROM organization WHERE organization_name=%s ALLOW FILTERING"
+    organization = session.execute(org_query, (organization_name,)).one()
+    
+    # If organization is not found
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Fetch the project using the organization ID
+    project_query = "SELECT id FROM project WHERE project_name=%s AND organization_id=%s LIMIT 1 ALLOW FILTERING"
+    project = session.execute(project_query, (project_name, organization.id)).one()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Case 2: The project exists but the project ID does not match the token's project ID
+    if  project.id not in user["project_id"]:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    # Check if the collection already exists
+    collection_query = "SELECT id FROM collection WHERE collection_name=%s AND project_id=%s ALLOW FILTERING"
+    existing_collection = session.execute(collection_query, (name, project.id)).one()
+    if existing_collection:
+        raise HTTPException(status_code=409, detail="Collection already exists")
+
+    # Add the default fields to the schema
+    schema["timestamp"] = "TIMESTAMP"
+    if clustering_key_format == "month":
+        schema["month"] = "DATE"  # Use 'month' instead of 'day' if specified
+    else:
+        schema["day"] = "DATE"  # Default clustering key format
+
+    if "key" not in schema:
+        schema["key"] = "TEXT"
+
+    # Construct the primary key
+    partition_keys = ["key"]
+    if additional_partition_keys:
+        partition_keys.extend(additional_partition_keys)
+    print(clustering_key_format)
+    partition_keys.extend([clustering_key_format])
+    print(partition_keys)
+    clustering_keys = ["timestamp"]
+    primary_key = f"(({', '.join(partition_keys)}), {', '.join(clustering_keys)})"
+
+    # Construct the CREATE TABLE query
+    keyspace_name = organization_name.lower()
+    table_name = f"{project_name.lower()}_{name.lower()}"
+
+    columns = ", ".join([f"{col_name.lower()} {col_type.lower()}" for col_name, col_type in schema.items()])
+    create_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {keyspace_name}.{table_name} (
+        {columns},
+        PRIMARY KEY {primary_key}
+    ) WITH CLUSTERING ORDER BY (timestamp DESC)
+    """
+
+    print(create_table_query)
+    try:
+        session.execute(create_table_query)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create collection table: {str(e)}")
+
+    # Create the Kafka topic
+    kafka_topic_name = f"{organization_name.lower()}.{project_name.lower()}.{name.lower()}"
+
+    kafka_admin_client = AdminClient({'bootstrap.servers': '155.207.19.243:59498'})
+    new_topic = NewTopic(kafka_topic_name, num_partitions=4, replication_factor=1)
+    fs = kafka_admin_client.create_topics([new_topic])
+    for topic, f in fs.items():
+        try:
+            f.result()  # The result itself is None
+            print(f"Topic {topic} created successfully")
+        except Exception as e:
+            print(f"Failed to create topic {topic}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create Kafka topic {topic}: {str(e)}")
+
+    try:
+        container_name = f"{organization_name}_{project_name}_{name}_consumer"
+        topic_name = f"{organization_name}.{project_name}.{name}"
+        keyspace_name = organization_name.lower()
+        table_name = f"{project_name}_{name}"
+        
+        docker_client.containers.run(
+            "kafka-cassandra-consumer",  # Replace with your actual image name
+            name=container_name,
+            environment={
+                "KAFKA_BOOTSTRAP_SERVERS": "155.207.19.243:59498",
+                "CASSANDRA_CONTACT_POINTS": "155.207.19.242",
+                "CASSANDRA_PORT": "9042",
+                "COLLECTION_NAME": name,
+                "PROJECT_NAME": project_name,
+                "ORGANIZATION_NAME": organization_name
+            },
+            detach=True,
+            restart_policy={"Name": "always"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start consumer container: {str(e)}")
+    
+    # Insert the new collection into the collection metadata table
+    collection_id = uuid.uuid4()
+    insert_query = """
+    INSERT INTO collection (id, collection_name, creation_date, description, organization_id, project_id, tags)
+    VALUES (%s, %s, toTimestamp(now()), %s, %s, %s, %s)
+    """
+    session.execute(insert_query, (collection_id, name, description, organization.id, project.id, tags))
+
+    return {"message": "Collection created successfully", "collection_id": str(collection_id)}
