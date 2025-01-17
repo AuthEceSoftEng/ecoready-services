@@ -47,11 +47,15 @@ def get_user_from_db(username: str):
         }
     return None
 def validate_api_key(api_key: str):
-    query = "SELECT key_type, project_id FROM api_keys WHERE api_key=%s LIMIT 1 allow filtering"
-    key_data = session.execute(query, (api_key,)).one()
-    if key_data:
-        return key_data.key_type, key_data.project_id
-    return None, None
+    query = "SELECT key_type, project_id FROM api_keys WHERE api_key=%s ALLOW FILTERING"
+    key_data = list(session.execute(query, (api_key,)))  # Convert to a list immediately
+
+    # Extract all project IDs associated with the API key
+    project_ids = [row.project_id for row in key_data]
+
+    # Determine the key type (assuming all rows have the same key type)
+    key_type = key_data[0].key_type if key_data else None  # Check if key_data is not empty
+    return key_type, project_ids
 
 def get_current_user(
     bearer_credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer_security)],
