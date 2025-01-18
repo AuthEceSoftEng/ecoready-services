@@ -1650,7 +1650,7 @@ async def create_new_collection(
     user: dict = Depends(get_current_user),
     additional_partition_keys: List[str] = Query(None),  # Optional additional partition keys
     additional_clustering_keys: List[str] = Query(None),  # Optional additional clustering keys
-    clustering_key_format: str = Query("day"),  # Optional clustering key format
+    clustering_key_format: str Query("day", enum=["day", "month", "year"]  # Optional clustering key format
 ):    
     # Check if the user has the master role
     if user["role"] != "master":
@@ -1683,7 +1683,9 @@ async def create_new_collection(
     # Add the default fields to the schema
     schema["timestamp"] = "TIMESTAMP"
     if clustering_key_format == "month":
-        schema["month"] = "DATE"  # Use 'month' instead of 'day' if specified
+        schema["month"] = "DATE" 
+    elif clustering_key_format == "year":
+        schema["year"] = "DATE" 
     else:
         schema["day"] = "DATE"  # Default clustering key format
 
