@@ -1650,7 +1650,7 @@ async def create_new_collection(
     user: dict = Depends(get_current_user),
     additional_partition_keys: List[str] = Query(None),  # Optional additional partition keys
     additional_clustering_keys: List[str] = Query(None),  # Optional additional clustering keys
-    clustering_key_format: str = Query("day", enum=["day", "month", "year"]  # Optional clustering key format
+    clustering_key_format: str = Query("day", enum=["day", "month", "year"]),  # Optional clustering key format
 ):    
     # Check if the user has the master role
     if user["role"] != "master":
