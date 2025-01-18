@@ -1765,4 +1765,4 @@ async def create_new_collection(
     """
     session.execute(insert_query, (collection_id, name, description, organization.id, project.id, tags))
 
-    return {"message": "Collection created successfully", "collection_id": str(collection_id)}
+    return {"message": "Collection created successfully!", "collection_id": str(collection_id)}

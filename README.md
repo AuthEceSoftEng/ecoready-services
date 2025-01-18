@@ -26,7 +26,7 @@ Make sure you have Python and pip installed on your machine.
     ```
 
 3. Install the required packages:
-    ```bash
+    ```bash 
     pip install -r requirements.txt
     ```
 
