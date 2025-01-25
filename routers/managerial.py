@@ -1392,7 +1392,12 @@ async def get_collection_statistics(
 
     query += " ALLOW FILTERING"
     # Execute the query and fetch data
-    results = session.execute(query)
+    try:
+        results = session.execute(query)
+    except:
+        print("ERROR!")
+        print("---------------------------")
+        return []
     results_list = [dict(row._asdict()) for row in results]
     # Group and aggregate data based on the specified interval
     if interval:
