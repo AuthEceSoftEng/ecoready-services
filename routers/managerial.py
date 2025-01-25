@@ -1394,21 +1394,22 @@ async def get_collection_statistics(
     # Execute the query and fetch data
     try:
         results = session.execute(query)
+
+        results_list = [dict(row._asdict()) for row in results]
+        # Group and aggregate data based on the specified interval
+        if interval:
+            _, every_n, units = interval.split('_')
+            every_n = int(every_n)
+            if units not in ["minutes", "hours", "days", "weeks", "months"]:
+                raise HTTPException(status_code=422, detail=f"The unit for the interval isn't supported") 
+            aggregated_data = aggregate_data(results_list, every_n, units, stat, attribute, group_by)
+        else:
+            aggregated_data = results_list
+        # Apply the renaming of the calculated stat attribute 
     except:
         print("ERROR!")
         print("---------------------------")
         return []
-    results_list = [dict(row._asdict()) for row in results]
-    # Group and aggregate data based on the specified interval
-    if interval:
-        _, every_n, units = interval.split('_')
-        every_n = int(every_n)
-        if units not in ["minutes", "hours", "days", "weeks", "months"]:
-            raise HTTPException(status_code=422, detail=f"The unit for the interval isn't supported") 
-        aggregated_data = aggregate_data(results_list, every_n, units, stat, attribute, group_by)
-    else:
-        aggregated_data = results_list
-    # Apply the renaming of the calculated stat attribute 
     if order:
         aggregated_data.sort(key=lambda x: x.get(f"{stat}_{attribute}"), reverse=(order == "desc"))
     return aggregated_data
