@@ -668,8 +668,13 @@ async def create_collection(
         raise HTTPException(status_code=404, detail="Project not found")
     
     # Case 2: The project exists but the project ID does not match the token's project ID
-    if project.id != user["project_id"]:
-        raise HTTPException(status_code=403, detail="Access denied.")
+    print(project.id)
+    print(user["project_id"])
+    print(str(user["project_id"][0]))
+    for i in user["project_id"]:
+        if str(i) == project.id:
+            break 
+            raise HTTPException(status_code=403, detail="Access denied.")
 
     # Check if the collection already exists
     collection_query = "SELECT id FROM collection WHERE collection_name=%s AND project_id=%s ALLOW FILTERING"
