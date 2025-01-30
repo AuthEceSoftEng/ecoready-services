@@ -12,22 +12,7 @@ bearer_security = HTTPBearer(auto_error=False)
 basic_security = HTTPBasic(auto_error=False)
 
 users_db = {
-    "alice": {
-        "username": "alice",
-        "password": "alice-secret"
-    },
-    "bob": {
-        "username": "bob",
-        "password": "bob-secret"
-    },
-    "kafka": {
-        "username": "kafka",
-        "password": "pass123"
-    },
-    "Admin": {
-        "username": "Admin",
-        "password": "pass123"
-    }
+    
 }
 # Cassandra configuration
 CASSANDRA_CONTACT_POINTS = ['155.207.19.242']  # Replace with >
@@ -63,14 +48,7 @@ def get_current_user(
 ):
     if basic_credentials:
         # Basic Authentication (Admin or Regular User)
-        if basic_credentials.username == "admin" and basic_credentials.password == "pass123":
-            return {"username": "admin", "role": "admin"}
-        else:
-            user = get_user_from_db(basic_credentials.username)
-            if user and user["password"] == basic_credentials.password:
-                return {"username": basic_credentials.username, "organization_id": user["organization_id"]}
-            else:
-                raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Basic Authentication not supported")
 
     elif bearer_credentials:
         # Bearer Authentication (Token-based)

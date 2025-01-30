@@ -523,7 +523,6 @@ async def get_all_projects(
     # Fetch all projects for the organization
     query = "SELECT id, project_name, description, tags, creation_date FROM project WHERE organization_id=%s allow filtering"
     projects = session.execute(query, (user["organization_id"],)).all()
-
     return {
         "projects": [
             {
@@ -551,13 +550,13 @@ async def get_project_info(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    return {
+    
+    return [{
         "project_name": project.project_name,
         "description": project.description,
         "tags": project.tags,
         "creation_date": project.creation_date
-    }
+    }]
 TAG = "Project Key Management"
 
 def generate_key(project_id: uuid.UUID, key_type: str) -> str:
