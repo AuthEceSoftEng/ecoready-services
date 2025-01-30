@@ -13,3 +13,5 @@ pytest-asyncio
 python-dotenv
 python-jose
 passlib[bcrypt]
+pydantic-settings==2.7.1
+python-multipart==0.0.20

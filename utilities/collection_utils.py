@@ -173,8 +173,12 @@ async def create_cassandra_table(organization_name: str, project_name: str, data
     if not any(key.lower() == 'timestamp' for key in flattened_schema):
         flattened_schema['timestamp'] = 'TIMESTAMP'
     flattened_schema['day'] = 'DATE'
+    # Check for key column, if not present add it
+    has_key = any(key.lower() == 'key' for key in flattened_schema)
+    if not has_key:
+        flattened_schema['key'] = 'TEXT'
     columns = ", ".join([f'"{col_name}" {col_type}' for col_name, col_type in flattened_schema.items()])
-    primary_key = "((day), timestamp)"
+    primary_key = "((day, key), timestamp)"
     create_table_query = f"""
     CREATE TABLE IF NOT EXISTS {keyspace_name}.{table_name} (
         {columns},

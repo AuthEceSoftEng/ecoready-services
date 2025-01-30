@@ -6,14 +6,14 @@ import os
 load_dotenv()
 
 class Settings(BaseSettings):
-    app_name: str = "FastAPI Application"
+    app_name: str = os.getenv("APP_NAME", "services")
     environment: str = os.getenv("ENVIRONMENT", "development")  # dev/prod/testing
     admin_username: str = os.getenv("ADMIN_USERNAME", "")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "")
     # JWT Settings
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "supersecretkey")  # Default secret key (replace in prod)
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")  # Default algorithm for JWT
-    jwt_expiration_minutes: int = int(os.getenv("JWT_EXPIRATION_MINUTES", 30))  # Token expiration time
+    jwt_expiration_minutes: int = int(os.getenv("JWT_EXPIRATION_MINUTES", 230))  # Token expiration time
 
     # Kafka Settings
     kafka_brokers: str = os.getenv("KAFKA_BROKERS", "localhost:59498")
