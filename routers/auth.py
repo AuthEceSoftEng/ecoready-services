@@ -30,7 +30,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
     
     return {"access_token": access_token, "token_type": "bearer"}
-
+""" 
 @router.get("/me")
 async def read_users_me(current_user: dict = Depends(get_current_user_from_jwt)):
     # Here, current_user is the user data that was extracted from the JWT
@@ -38,4 +38,4 @@ async def read_users_me(current_user: dict = Depends(get_current_user_from_jwt))
 
 @router.get("/admin-area")
 async def access_admin_area(superadmin: dict = Depends(verify_superadmin)):
-    return {"message": f"Welcome to the admin area, {superadmin.username}!"}
+    return {"message": f"Welcome to the admin area, {superadmin.username}!"} """
