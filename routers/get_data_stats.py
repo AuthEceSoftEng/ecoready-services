@@ -80,7 +80,7 @@ async def get_collection_statistics(
     # Add WHERE conditions if there are any
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-
+    
     # Add time conditions
     if start_time and end_time:
         if not conditions:
