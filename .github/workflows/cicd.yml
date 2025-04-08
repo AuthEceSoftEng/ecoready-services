@@ -25,6 +25,7 @@ jobs:
             cd ~/ecoready/ecoready-services
             git reset --hard origin/main
             git pull https://${{ secrets.CLONE_TOKEN }}@github.com/AuthEceSoftEng/ecoready-services main
+            cp ../.env .env
             bash -ci 'python3 -m venv venv'
             bash -ci 'source venv/bin/activate'
             bash -ci 'pip install -r requirements.txt'
