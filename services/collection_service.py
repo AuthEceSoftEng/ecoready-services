@@ -49,7 +49,7 @@ async def create_collection_service(organization_id: uuid.UUID, project_id: uuid
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start consumer container: {str(e)}")    
     await insert_collection(organization_id, project_id, data)
-    return {"message": f"Collection {data.name} created successfully"}
+    return {"message": f"Collection {data.name} created successfully with ID {data.id}"}
 
 async def update_collection_service(organization_id: uuid.UUID, project_id: uuid.UUID, collection_id: uuid.UUID, data: CollectionUpdateRequest):
     await update_collection_in_db(collection_id, data)
