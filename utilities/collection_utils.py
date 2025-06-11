@@ -143,7 +143,7 @@ async def fetch_collection_by_name(organization_id: uuid.UUID, project_id: uuid.
 async def fetch_collection_schema(organization_name: str, project_name: str, collection_name: str):
     # Fetch the schema of the collection from the system tables
     keyspace_name = organization_name
-    table_name = f'"{project_name}${collection_name}"'
+    table_name = f'"{project_name}_{collection_name}"'
     schema_query = """
     SELECT column_name, type 
     FROM system_schema.columns 
@@ -234,7 +234,7 @@ async def insert_data_into_table(
     records: List[dict]
 ):
     keyspace_name = organization_name
-    table_name = f'"{project_name}${collection_name}"'
+    table_name = f'"{project_name}_{collection_name}"'
     
     # Loop through each record and insert it into the table
     for record in records:

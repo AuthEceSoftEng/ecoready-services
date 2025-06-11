@@ -22,7 +22,7 @@ from utilities.project_utils import get_project_by_id
 docker_client = docker.from_env()
 
 async def create_collection_service(organization_id: uuid.UUID, project_id: uuid.UUID, data: CollectionCreateRequest):
-    if contains_special_characters(data.name,allow_spaces=False, allow_underscores=False):
+    if contains_special_characters(data.name,allow_spaces=False, allow_underscores=True):
         raise HTTPException(status_code=400, detail="Invalid name format. Names can only contain latin letters and numbers.")
     if await fetch_collection_by_name(organization_id, project_id, data.name):
         raise HTTPException(status_code=409, detail="Collection already exists")
